@@ -50,3 +50,19 @@ def test_verify_exhausted_attempts_marks_failed(db):
     v = Verifier(db)
     v.apply(db.get_task("t"))
     assert db.get_task("t").status == TaskStatus.FAILED
+
+
+def test_verify_content_clause(db, tmp_path):
+    # verification: spec.md "with a price or offer" (OR -> price alone suffices)
+    spec = tmp_path / "spec.md"
+    spec.write_text("Product X\nPrice: $9")
+    t = Task(id="t", sub_goal="s", goal_statement="g",
+             verification=f"file exists at {spec} with a price or offer")
+    db.add_task(t)
+    assert Verifier(db).apply(db.get_task("t")) is True
+    # AND clause: requires BOTH price AND offer -> fails when offer missing
+    spec.write_text("Product X\nPrice: $9")  # has price, no offer
+    t2 = Task(id="t2", sub_goal="s2", goal_statement="g",
+              verification=f"file exists at {spec} with a price and an offer")
+    db.add_task(t2)
+    assert Verifier(db).apply(db.get_task("t2")) is False
