@@ -1,0 +1,6 @@
+# Runtime: pure standard library. No third-party deps required to run Jarvis core.
+# The persist() step that actually spawns Hermes worker agents happens via the
+# Hermes delegate_task tool (see SKILL.md), not via a Python SDK.
+
+# Dev / test only:
+pytest>=7.0
