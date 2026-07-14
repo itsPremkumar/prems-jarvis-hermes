@@ -3,6 +3,8 @@ __pycache__/
 .pytest_cache/
 jarvis_state.db
 _selftest.db
+jarvis.log
+jarvis.log.1
 *.egg-info/
 dist/
 build/

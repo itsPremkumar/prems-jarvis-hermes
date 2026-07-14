@@ -4,6 +4,7 @@ from .dispatcher import Dispatcher, Dispatch
 from .verifier import Verifier
 from .monitor import Monitor
 from .cycle import run_cycle, CycleReport, JarvisError, ingest_worker_report
+from .logging import log_event
 from .defaults import Defaults, DEFAULT_GOAL
 
 __all__ = [

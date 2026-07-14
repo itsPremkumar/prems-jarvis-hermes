@@ -18,6 +18,7 @@ from .planner import Planner
 from .dispatcher import Dispatcher, Dispatch
 from .verifier import Verifier
 from .monitor import Monitor
+from .logging import log_event
 
 
 class JarvisError(RuntimeError):
@@ -51,14 +52,15 @@ def run_cycle(
     dispatcher = dispatcher or Dispatcher(state, d)
     verifier = verifier or Verifier(state)
     monitor = monitor or Monitor(d.min_free_ram_mb, d.max_cpu_percent)
-
     cycle = state.bump_cycle()
     state.set_last_tick(time.time())
     report = CycleReport(cycle=cycle, goal_accomplished=False, health=monitor.health())
+    log_event(event="cycle", status="start", cycle=cycle)
 
     # 0) no goal set -> fatal, can't run
     goal = state.get_goal()
     if goal is None or not goal.statement.strip():
+        log_event(event="cycle", status="error", cycle=cycle, detail="no goal set")
         raise JarvisError("No goal set. Call set_goal() before running cycles.")
 
     # 1) Consume a worker report if provided (Hermes agent passes it back)
@@ -73,6 +75,7 @@ def run_cycle(
         report.goal_accomplished = True
         report.idle = True
         report.next_action = "Goal accomplished. Sleeping until re-eval."
+        log_event(event="cycle", status="goal_accomplished", cycle=cycle)
         return report
 
     # 3) Resource gate before doing anything expensive
@@ -80,6 +83,8 @@ def run_cycle(
         report.next_action = "Resource guard: cannot spawn now (RAM/CPU). Sleeping."
         report.idle = True
         report.stuck_cycles = _bump_stuck(state)
+        log_event(event="cycle", status="resource_guard", cycle=cycle,
+                  detail=report.next_action)
         return report
 
     # 4) Decompose: create at most max_new_per_cycle sub-goals.
@@ -95,6 +100,8 @@ def run_cycle(
         if task is not None:
             report.dispatched = dispatcher.dispatch(task)
             report.next_action = f"Dispatched worker for: {task.sub_goal}"
+            log_event(event="dispatch", status="ok", cycle=cycle,
+                      task_id=task.id, detail=task.sub_goal)
             _reset_stuck(state)
             return report
 
@@ -105,6 +112,8 @@ def run_cycle(
         report.next_action = (
             f"Escalating to operator: {report.stuck_cycles} cycles with no progress."
         )
+        log_event(event="cycle", status="escalation", cycle=cycle,
+                  detail=report.next_action)
     else:
         report.idle = True
         report.next_action = "Queue clear / capacity full. Sleeping until next tick."
@@ -117,16 +126,20 @@ def ingest_worker_report(state, verifier, task_id: str, status: str, text: str, 
     `run` reviewer_report path and the standalone `jarvis.cli report` command."""
     task = state.get_task(task_id.strip())
     if task is None:
+        log_event(event="report", status="unknown_task", task_id=task_id.strip())
         return "UNKNOWN_TASK"
     task.result = (text or "").strip()
     if status.strip().lower() in ("done", "pass", "success"):
         passed = verifier.apply(task)
         label = "PASS" if passed else "RETRY"
+        log_event(event="report", status=label, task_id=task.id,
+                  detail=task.verification_notes)
     else:
         task.status = TaskStatus.OPEN if task.attempts < task.max_attempts else TaskStatus.FAILED
         task.verification_result = False
         state.update_task(task)
         label = "REPORTED_FAIL"
+        log_event(event="report", status=label, task_id=task.id, detail=text)
     if rep is not None:
         rep.verified.append(f"{task.id}:{label}")
     return label

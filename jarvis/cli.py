@@ -11,11 +11,13 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+import time
 
 from .core import (
     State, Planner, Dispatcher, Verifier, Monitor, Defaults, DEFAULT_GOAL, Goal, JarvisError,
-    ingest_worker_report,
+    ingest_worker_report, log_event,
 )
+from .core.logging import read_events, last_cycle_ts, uptime_since_first
 from .dashboard import render_dashboard
 
 
@@ -56,9 +58,8 @@ def cmd_run(args):
     verifier = Verifier(s)
     monitor = Monitor(Defaults().min_free_ram_mb, Defaults().max_cpu_percent)
     try:
-        rep = __import__("jarvis.core.cycle", fromlist=["run_cycle"]).run_cycle(
-            s, planner, dispatcher, verifier, monitor, Defaults()
-        )
+        from jarvis.core.cycle import run_cycle
+        rep = run_cycle(s, planner, dispatcher, verifier, monitor, Defaults())
     except JarvisError as e:
         print(f"ERROR: {e}", file=sys.stderr)
         return 2
@@ -83,6 +84,21 @@ def cmd_report(args):
     label = ingest_worker_report(s, verifier, args.task_id, args.status, args.text)
     print(f"[{label}] task {args.task_id} -> {s.get_task(args.task_id).status.value}")
     s.close()
+    return 0
+
+
+def cmd_log(args):
+    import os as _os
+    log_path = _os.path.join(_os.path.dirname(_os.path.abspath(args.db)), "jarvis.log")
+    events = read_events(log_path, args.limit)
+    if not events:
+        print("(no events logged yet)")
+        return 0
+    for e in events:
+        ts = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(e.get("ts", 0)))
+        print(f"{ts}  {e.get('event'):<10} {e.get('status'):<16} "
+              f"{('task=' + e['task_id']) if e.get('task_id') else ''} "
+              f"{e.get('detail', '')[:60]}")
     return 0
 
 
@@ -210,6 +226,10 @@ def main(argv=None):
     p_report.set_defaults(func=cmd_report)
 
     sub.add_parser("tasks", help="list all tasks").set_defaults(func=cmd_tasks)
+
+    p_log = sub.add_parser("log", help="show structured event log")
+    p_log.add_argument("--limit", type=int, default=30)
+    p_log.set_defaults(func=cmd_log)
 
     sub.add_parser("selftest", help="offline structural self-test").set_defaults(func=cmd_selftest)
 

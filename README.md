@@ -27,13 +27,35 @@ python -m pip install -e .            # runtime = stdlib only
 python -m pip install -e ".[dev]"     # + pytest for tests
 ```
 
-## Usage
+## Resilience layer (survives reboot + Hermes death)
+
+- **Structured logging** — every cycle/dispatch/verify/escalation writes one
+  JSON line to `jarvis.log`. View with `python -m jarvis.cli log --limit 30`.
+  Logs rotate at ~2 MB so they can never fill the disk.
+- **External watchdog** (`watchdog.py`) — runs *outside* Hermes (via Windows
+  Task Scheduler), so it survives Hermes crashing. It checks whether a Jarvis
+  cycle ran recently; exits 2 (alert) if stale. `python watchdog.py --db ... --max-age-min 40`
+- **Reboot survival** — two Task Scheduler tasks are registered:
+  - `JarvisBoot` (on login): runs one Jarvis cycle right after a reboot, so the
+    queue resumes automatically. State is already durable in `jarvis_state.db`.
+  - `JarvisWatchdog` (every 10 min): the liveness check above.
+
+> Layering reality: Hermes (the desktop app) is the host; Jarvis is a cron guest
+> inside it. So the recovery chain terminates at the OS (Task Scheduler), not at
+> Jarvis. Jarvis cannot restart Hermes — only the OS trigger can. This is by
+> design, not a gap.
+
+## Commands
 ```bash
 python -m jarvis.cli init        # create state DB + set default money goal
 python -m jarvis.cli status      # show goal / task counts
 python -m jarvis.cli dashboard   # always-visible Jarvis dashboard
 python -m jarvis.cli run         # run EXACTLY ONE cycle (the cron agent calls this)
+python -m jarvis.cli report <id> done|failed "summary"   # feed worker result
+python -m jarvis.cli tasks       # list all tasks
+python -m jarvis.cli log         # show structured event log
 python -m jarvis.cli selftest    # offline structural self-test (no network/tokens)
+python watchdog.py --db jarvis_state.db --max-age-min 40   # external liveness check
 ```
 
 ### Running as a 24/7 loop inside Hermes
