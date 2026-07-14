@@ -9,7 +9,9 @@ Subcommands:
 """
 from __future__ import annotations
 import argparse
+import atexit
 import os
+import signal
 import sys
 import time
 
@@ -19,6 +21,30 @@ from .core import (
 )
 from .core.logging import read_events, last_cycle_ts, uptime_since_first
 from .dashboard import render_dashboard
+
+# ---- req 7/14: never let an unhandled crash lose state; log it, exit clean ----
+def _install_crash_guard(db_path: str):
+    def handle(exc_type, exc, tb):
+        try:
+            log_event(event="crash", status="unhandled_exception",
+                      detail=f"{exc_type.__name__}: {exc}")
+        except Exception:  # noqa
+            pass
+        sys.__excepthook__(exc_type, exc, tb)
+
+    sys.excepthook = handle
+
+    def _graceful(signum, frame):
+        log_event(event="shutdown", status="signal", detail=f"signal {signum}")
+        sys.exit(0)
+
+    try:
+        signal.signal(signal.SIGINT, _graceful)
+        signal.signal(signal.SIGTERM, _graceful)
+    except (ValueError, OSError):  # noqa: not in main thread / Windows
+        pass
+
+    atexit.register(lambda: log_event(event="shutdown", status="exit", detail="clean"))
 
 
 def _state(db_path: str) -> State:
@@ -209,6 +235,20 @@ def cmd_selftest(args):
     return 0 if ok else 1
 
 
+def cmd_install(args):
+    from .install import install
+    for name, ok, msg in install():
+        print(f"[{'OK' if ok else 'FAIL'}] {name}: {msg}")
+    return 0
+
+
+def cmd_uninstall(args):
+    from .install import uninstall
+    for name, ok, msg in uninstall():
+        print(f"[{'OK' if ok else 'FAIL'}] {name}: {msg}")
+    return 0
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(prog="jarvis", description="Prems-Jarvis-Hermes orchestrator")
     p.add_argument("--db", default="jarvis_state.db", help="path to state DB")
@@ -233,7 +273,12 @@ def main(argv=None):
 
     sub.add_parser("selftest", help="offline structural self-test").set_defaults(func=cmd_selftest)
 
+    sub.add_parser("install", help="register Windows Task Scheduler tasks (reboot survival)").set_defaults(func=cmd_install)
+    p_uninstall = sub.add_parser("uninstall", help="remove the scheduled tasks")
+    p_uninstall.set_defaults(func=cmd_uninstall)
+
     args = p.parse_args(argv)
+    _install_crash_guard(args.db)
     return args.func(args)
 
 

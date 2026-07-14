@@ -5,6 +5,7 @@ working-set via ctypes when available; otherwise we degrade gracefully. This is
 the gate that prevents Jarvis from spawning workers when the box is starved.
 """
 from __future__ import annotations
+import os
 import sys
 
 
@@ -53,6 +54,15 @@ class Monitor:
         return (self.free_ram_mb() >= self.min_free_ram_mb
                 and self.cpu_percent() <= self.max_cpu_percent)
 
+    def disk_free_mb(self, path: str = None) -> float:
+        """Free bytes on the volume holding `path` (defaults to cwd)."""
+        try:
+            import shutil
+            p = path or os.getcwd()
+            return shutil.disk_usage(p).free / (1024 * 1024)
+        except Exception:  # noqa
+            return float("inf")
+
     def online(self, host: str = "8.8.8.8", timeout: float = 3.0) -> bool:
         """Cheap connectivity probe. Tries a TCP connect to a reliable host; no
         DNS lookup, no HTTP. Returns False fast if the network is down so the
@@ -70,6 +80,7 @@ class Monitor:
         return {
             "free_ram_mb": round(self.free_ram_mb(), 1),
             "cpu_percent": round(self.cpu_percent(), 1),
+            "disk_free_mb": round(self.disk_free_mb(), 1),
             "can_spawn": self.can_spawn(),
             "online": self.online(),
         }
