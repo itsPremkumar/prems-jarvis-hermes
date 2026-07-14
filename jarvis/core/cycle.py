@@ -37,7 +37,8 @@ class CycleReport:
     next_action: str = ""
     health: dict = field(default_factory=dict)
     idle: bool = False
-
+    hermes: dict = None  # supervisor view of Hermes host (running/launched/action)
+    online: bool = True  # connectivity at cycle time
 
 def run_cycle(
     state: State,
@@ -87,6 +88,25 @@ def run_cycle(
                   detail=report.next_action)
         return report
 
+    # 3b) Connectivity gate: if offline, only local tasks may run; internet
+    # tasks are parked and resumed automatically on reconnect (no failure spam).
+    online = monitor.health().get("online", True)
+    report.online = online
+    if not online:
+        # park any internet-dependent ready task; dispatch only local-capable ones
+        ready = dispatcher.ready_task()
+        if ready is not None and not _needs_network(ready):
+            report.dispatched = dispatcher.dispatch(ready)
+            report.next_action = f"Offline: dispatched LOCAL worker for: {ready.sub_goal}"
+            _reset_stuck(state)
+            return report
+        report.next_action = "Offline: internet-dependent work paused; will resume on reconnect."
+        report.idle = True
+        report.stuck_cycles = _bump_stuck(state)
+        log_event(event="cycle", status="offline_parked", cycle=cycle,
+                  detail=report.next_action)
+        return report
+
     # 4) Decompose: create at most max_new_per_cycle sub-goals.
     # NOTE: creating a task is NOT progress; do NOT reset the stuck counter here.
     new = planner.next_subgoals(max_new=d.max_new_per_cycle)
@@ -105,7 +125,7 @@ def run_cycle(
             _reset_stuck(state)
             return report
 
-    # 6) Nothing to do -> idle. Track stuck cycles for escalation.
+
     report.stuck_cycles = _bump_stuck(state)
     if report.stuck_cycles >= d.stuck_cycles_before_escalation:
         report.escalated = True
@@ -164,3 +184,14 @@ def _bump_stuck(state: State) -> int:
 
 def _reset_stuck(state: State):
     state._set_meta("stuck", "0")
+
+
+# Toolsets that require internet; local-only work may run while offline.
+_NET_TOOLSETS = {"web", "browser", "github", "research", "maps", "youtube",
+                 "email", "notion", "airtable", "mcp"}
+
+
+def _needs_network(task) -> bool:
+    """True if the task's worker requires internet (based on its toolsets)."""
+    toolsets = getattr(task, "toolsets", None) or []
+    return any(t in _NET_TOOLSETS for t in toolsets)

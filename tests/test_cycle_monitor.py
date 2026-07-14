@@ -41,6 +41,24 @@ def test_run_cycle_no_goal_raises(db):
         _os.remove(path)
 
 
+class _OfflineMonitor(Monitor):
+    def health(self):
+        h = super().health()
+        h["online"] = False
+        return h
+
+
+def test_run_cycle_offline_parks_internet_tasks(db):
+    # dispatcher gives an internet-dependent ready task; offline -> parked, idle
+    mon = _OfflineMonitor(min_free_ram_mb=0, max_cpu_percent=100)
+    rep = run_cycle(db, Planner(db), Dispatcher(db, Defaults()),
+                    Verifier(db), mon, Defaults())
+    assert rep.online is False
+    assert rep.idle is True
+    assert "paused" in rep.next_action
+    assert rep.dispatched is None
+
+
 def test_run_cycle_ingests_worker_report(db):
     # create + dispatch a task, then feed a done report with a real file check
     f = pathlib.Path(tempfile.gettempdir()) / "rep_marker.txt"

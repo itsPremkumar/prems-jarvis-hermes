@@ -53,9 +53,23 @@ class Monitor:
         return (self.free_ram_mb() >= self.min_free_ram_mb
                 and self.cpu_percent() <= self.max_cpu_percent)
 
+    def online(self, host: str = "8.8.8.8", timeout: float = 3.0) -> bool:
+        """Cheap connectivity probe. Tries a TCP connect to a reliable host; no
+        DNS lookup, no HTTP. Returns False fast if the network is down so the
+        loop can pause internet-dependent work instead of failing workers."""
+        import socket
+        try:
+            socket.setdefaulttimeout(timeout)
+            sock = socket.create_connection((host, 53), timeout=timeout)
+            sock.close()
+            return True
+        except OSError:  # noqa: no route / timeout / DNS down
+            return False
+
     def health(self) -> dict:
         return {
             "free_ram_mb": round(self.free_ram_mb(), 1),
             "cpu_percent": round(self.cpu_percent(), 1),
             "can_spawn": self.can_spawn(),
+            "online": self.online(),
         }
