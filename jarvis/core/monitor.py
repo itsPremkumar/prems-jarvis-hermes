@@ -51,8 +51,33 @@ class Monitor:
             return 0.0  # unknown -> don't block
 
     def can_spawn(self) -> bool:
-        return (self.free_ram_mb() >= self.min_free_ram_mb
-                and self.cpu_percent() <= self.max_cpu_percent)
+        # Historically this hard-blocked when free RAM < min_free_ram_mb, which
+        # on a low-RAM box (free RAM often ~100-300 MB) meant NO worker EVER
+        # dispatched -> tasks stuck in DOING -> permanent escalation. We now
+        # only block on a genuine critical shortage (well below the floor) and
+        # otherwise emit a 'low' warning so the cycle can still proceed. CPU is
+        # a soft signal too: only block when pegged.
+        free = self.free_ram_mb()
+        cpu = self.cpu_percent()
+        critical_ram = free < max(16, self.min_free_ram_mb // 4)
+        critical_cpu = cpu > max(self.max_cpu_percent, 98)
+        if critical_ram:
+            self._warn(f"RAM critically low ({round(free,1)} MB) - blocking spawn")
+            return False
+        if critical_cpu:
+            self._warn(f"CPU pegged ({round(cpu,1)}%) - blocking spawn")
+            return False
+        if free < self.min_free_ram_mb or cpu > self.max_cpu_percent:
+            self._warn(f"resource headroom low (RAM {round(free,1)}/{self.min_free_ram_mb} MB, "
+                       f"CPU {round(cpu,1)}/{self.max_cpu_percent}%) - proceeding")
+        return True
+
+    def _warn(self, msg: str):
+        try:
+            from .logging import log_event
+            log_event(event="resource_warn", status="warn", detail=msg)
+        except Exception:  # noqa
+            pass
 
     def disk_free_mb(self, path: str = None) -> float:
         """Free bytes on the volume holding `path` (defaults to cwd)."""

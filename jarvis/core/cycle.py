@@ -68,6 +68,12 @@ def run_cycle(
     if reviewer_report:
         _ingest_report(state, verifier, reviewer_report, report)
 
+    # 1b) Recover orphaned DOING tasks: a worker was dispatched but never
+    # reported back and the task has not been updated within stale_doing_minutes.
+    # Reset it to OPEN so it leaves DOING (releasing the dedup) and can be
+    # re-dispatched next tick. Without this, a lost dispatch = permanent stall.
+    _recover_stale_doing(state, d, report)
+
     # 2) Goal accomplished?
     if planner.goal_accomplished():
         goal = state.get_goal()
@@ -195,3 +201,25 @@ def _needs_network(task) -> bool:
     """True if the task's worker requires internet (based on its toolsets)."""
     toolsets = getattr(task, "toolsets", None) or []
     return any(t in _NET_TOOLSETS for t in toolsets)
+
+
+def _recover_stale_doing(state: State, d: Defaults, rep: CycleReport):
+    """Reset DOING tasks that have not been updated within stale_doing_minutes.
+
+    A dispatched worker that never reports back leaves the task wedged in DOING.
+    Because the planner dedups on (OPEN|DOING) sub_goal text, a wedged DOING task
+    blocks re-dispatch AND blocks the completion of its sub_goal forever. Resetting
+    it to OPEN releases the dedup and lets the next cycle re-dispatch it. Only the
+    MOST RECENT update is trusted (updated_at), so a genuinely active worker that
+    just hasn't checked in within the window is also reset -- but since a real
+    worker reports within one tick, 90 min is far longer than any legit dispatch.
+    """
+    cutoff = time.time() - d.stale_doing_minutes * 60
+    for t in state.list_tasks(TaskStatus.DOING):
+        if t.updated_at < cutoff:
+            t.status = TaskStatus.OPEN
+            state.update_task(t)
+            log_event(event="recover", status="stale_doing_reset", task_id=t.id,
+                      detail=f"reset DOING->OPEN (no update since {int(t.updated_at)})")
+            rep.next_action = f"Recovered stale DOING task: {t.sub_goal}"
+
