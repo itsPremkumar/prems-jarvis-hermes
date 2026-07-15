@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>JARVIS — Supervisor Dashboard</title>
+  <style>
+    :root {
+      --bg: #0a0e17;
+      --card: #111827;
+      --border: #1e293b;
+      --accent: #22d3ee;
+      --accent2: #6d5efc;
+      --green: #34d399;
+      --red: #f87171;
+      --yellow: #fbbf24;
+      --text: #e2e8f0;
+      --muted: #64748b;
+      --dim: #334155;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Cascadia Code', 'Fira Code', 'JetBrains Mono', 'Consolas', monospace;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      padding: 20px;
+    }
+    .header {
+      text-align: center;
+      padding: 20px 0 10px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 20px;
+    }
+    .header h1 {
+      font-size: 28px;
+      font-weight: 700;
+      letter-spacing: 8px;
+      color: var(--accent);
+      text-shadow: 0 0 20px rgba(34,211,238,0.3);
+    }
+    .header .subtitle {
+      color: var(--muted);
+      font-size: 12px;
+      margin-top: 5px;
+    }
+    .status-bar {
+      display: flex;
+      justify-content: center;
+      gap: 30px;
+      margin: 15px 0;
+      flex-wrap: wrap;
+    }
+    .status-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+    }
+    .status-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      animation: pulse 2s infinite;
+    }
+    .status-dot.online { background: var(--green); box-shadow: 0 0 8px var(--green); }
+    .status-dot.offline { background: var(--red); box-shadow: 0 0 8px var(--red); }
+    .status-dot.warning { background: var(--yellow); box-shadow: 0 0 8px var(--yellow); }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 15px;
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px;
+    }
+    .card-title {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      color: var(--muted);
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .card-title .icon { font-size: 14px; }
+    .goal-text {
+      font-size: 14px;
+      line-height: 1.6;
+      color: var(--text);
+      padding: 12px;
+      background: rgba(34,211,238,0.05);
+      border-left: 3px solid var(--accent);
+      border-radius: 0 4px 4px 0;
+    }
+    .health-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+    .health-item {
+      padding: 10px;
+      background: rgba(255,255,255,0.03);
+      border-radius: 6px;
+      text-align: center;
+    }
+    .health-value {
+      font-size: 22px;
+      font-weight: 700;
+      color: var(--accent);
+    }
+    .health-label {
+      font-size: 10px;
+      color: var(--muted);
+      text-transform: uppercase;
+      margin-top: 4px;
+    }
+    .health-bar {
+      height: 4px;
+      background: var(--dim);
+      border-radius: 2px;
+      margin-top: 6px;
+      overflow: hidden;
+    }
+    .health-bar-fill {
+      height: 100%;
+      border-radius: 2px;
+      transition: width 0.5s ease;
+    }
+    .health-bar-fill.green { background: var(--green); }
+    .health-bar-fill.yellow { background: var(--yellow); }
+    .health-bar-fill.red { background: var(--red); }
+    .task-list { list-style: none; }
+    .task-item {
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+    }
+    .task-item:last-child { border-bottom: none; }
+    .task-badge {
+      font-size: 10px;
+      padding: 2px 8px;
+      border-radius: 4px;
+      text-transform: uppercase;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+    .task-badge.doing { background: rgba(34,211,238,0.15); color: var(--accent); }
+    .task-badge.open { background: rgba(100,116,139,0.2); color: var(--muted); }
+    .task-badge.done { background: rgba(52,211,153,0.15); color: var(--green); }
+    .task-badge.failed { background: rgba(248,113,113,0.15); color: var(--red); }
+    .task-badge.blocked { background: rgba(251,191,36,0.15); color: var(--yellow); }
+    .task-goal { font-size: 13px; line-height: 1.4; }
+    .task-meta { font-size: 10px; color: var(--muted); margin-top: 4px; }
+    .event-list { list-style: none; max-height: 300px; overflow-y: auto; }
+    .event-item {
+      padding: 8px 0;
+      border-bottom: 1px solid var(--border);
+      font-size: 12px;
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
+    }
+    .event-item:last-child { border-bottom: none; }
+    .event-time { color: var(--muted); white-space: nowrap; min-width: 50px; }
+    .event-type {
+      padding: 1px 6px;
+      border-radius: 3px;
+      font-size: 10px;
+      text-transform: uppercase;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+    .event-type.cycle { background: rgba(34,211,238,0.15); color: var(--accent); }
+    .event-type.dispatch { background: rgba(109,94,252,0.15); color: var(--accent2); }
+    .event-type.verify { background: rgba(52,211,153,0.15); color: var(--green); }
+    .event-type.crash { background: rgba(248,113,113,0.15); color: var(--red); }
+    .event-type.shutdown { background: rgba(251,191,36,0.15); color: var(--yellow); }
+    .event-type.error { background: rgba(248,113,113,0.15); color: var(--red); }
+    .event-type.escalation { background: rgba(251,191,36,0.15); color: var(--yellow); }
+    .event-detail { color: var(--muted); flex: 1; word-break: break-word; }
+    .empty-state {
+      text-align: center;
+      padding: 30px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .cycle-counter {
+      font-size: 48px;
+      font-weight: 700;
+      color: var(--accent);
+      text-align: center;
+      text-shadow: 0 0 30px rgba(34,211,238,0.4);
+    }
+    .cycle-label {
+      text-align: center;
+      font-size: 11px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 2px;
+    }
+    .hermes-status {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      padding: 12px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 600;
+    }
+    .hermes-status.up { background: rgba(52,211,153,0.1); border: 1px solid rgba(52,211,153,0.3); }
+    .hermes-status.down { background: rgba(248,113,113,0.1); border: 1px solid rgba(248,113,113,0.3); }
+    .hermes-status.launched { background: rgba(251,191,36,0.1); border: 1px solid rgba(251,191,36,0.3); }
+    .refresh-indicator {
+      position: fixed;
+      top: 10px;
+      right: 10px;
+      font-size: 10px;
+      color: var(--muted);
+      opacity: 0.5;
+    }
+    .full-width { grid-column: 1 / -1; }
+  </style>
+</head>
+<body>
+  <div class="refresh-indicator" id="refreshIndicator">AUTO-REFRESH 5s</div>
+
+  <div class="header">
+    <h1>J A R V I S</h1>
+    <div class="subtitle">SUPERVISOR DASHBOARD</div>
+  </div>
+
+  <div class="status-bar" id="statusBar">
+    <div class="status-item">
+      <div class="status-dot" id="statusDot"></div>
+      <span id="statusText">LOADING...</span>
+    </div>
+    <div class="status-item">
+      <span>HERMES:</span>
+      <span id="hermesText">---</span>
+    </div>
+    <div class="status-item">
+      <span>NET:</span>
+      <span id="netText">---</span>
+    </div>
+    <div class="status-item">
+      <span id="lastUpdate">---</span>
+    </div>
+  </div>
+
+  <div class="grid">
+    <!-- Cycle Counter -->
+    <div class="card">
+      <div class="card-title"><span class="icon">&#x1F504;</span> CYCLE</div>
+      <div class="cycle-counter" id="cycleCount">-</div>
+      <div class="cycle-label">iterations completed</div>
+    </div>
+
+    <!-- Hermes Status -->
+    <div class="card">
+      <div class="card-title"><span class="icon">&#x1F916;</span> HERMES</div>
+      <div class="hermes-status" id="hermesCard">
+        <span id="hermesIcon">&#x1F534;</span>
+        <span id="hermesLabel">CHECKING...</span>
+      </div>
+    </div>
+
+    <!-- Goal -->
+    <div class="card full-width">
+      <div class="card-title"><span class="icon">&#x1F3AF;</span> GOAL</div>
+      <div class="goal-text" id="goalText">Loading...</div>
+    </div>
+
+    <!-- Health -->
+    <div class="card">
+      <div class="card-title"><span class="icon">&#x1F4CA;</span> SYSTEM HEALTH</div>
+      <div class="health-grid">
+        <div class="health-item">
+          <div class="health-value" id="cpuValue">-</div>
+          <div class="health-label">CPU %</div>
+          <div class="health-bar"><div class="health-bar-fill" id="cpuBar"></div></div>
+        </div>
+        <div class="health-item">
+          <div class="health-value" id="ramValue">-</div>
+          <div class="health-label">RAM Free</div>
+          <div class="health-bar"><div class="health-bar-fill" id="ramBar"></div></div>
+        </div>
+        <div class="health-item">
+          <div class="health-value" id="diskValue">-</div>
+          <div class="health-label">Disk Free</div>
+          <div class="health-bar"><div class="health-bar-fill green" id="diskBar"></div></div>
+        </div>
+        <div class="health-item">
+          <div class="health-value" id="spawnValue">-</div>
+          <div class="health-label">Can Spawn</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tasks -->
+    <div class="card">
+      <div class="card-title"><span class="icon">&#x1F4CB;</span> TASKS</div>
+      <ul class="task-list" id="taskList">
+        <li class="empty-state">Loading tasks...</li>
+      </ul>
+    </div>
+
+    <!-- Event Log -->
+    <div class="card full-width">
+      <div class="card-title"><span class="icon">&#x1F4DC;</span> EVENT LOG</div>
+      <ul class="event-list" id="eventList">
+        <li class="empty-state">Loading events...</li>
+      </ul>
+    </div>
+  </div>
+
+  <script>
+    function formatTime(ts) {
+      if (!ts) return '--:--';
+      var d = new Date(ts * 1000);
+      return d.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' });
+    }
+
+    function formatBytes(mb) {
+      if (mb >= 1024) return (mb / 1024).toFixed(1) + ' GB';
+      return mb.toFixed(0) + ' MB';
+    }
+
+    function getBarColor(percent, inverse) {
+      if (inverse) {
+        if (percent > 80) return 'red';
+        if (percent > 60) return 'yellow';
+        return 'green';
+      }
+      if (percent > 80) return 'red';
+      if (percent > 60) return 'yellow';
+      return 'green';
+    }
+
+    function updateDashboard(data) {
+      // Status dot
+      var dot = document.getElementById('statusDot');
+      var statusText = document.getElementById('statusText');
+      dot.className = 'status-dot online';
+      statusText.textContent = 'ONLINE (cycle #' + data.cycle + ')';
+
+      // Hermes
+      var hermesText = document.getElementById('hermesText');
+      var hermesCard = document.getElementById('hermesCard');
+      var hermesIcon = document.getElementById('hermesIcon');
+      var hermesLabel = document.getElementById('hermesLabel');
+      if (data.hermes.running) {
+        hermesText.textContent = '\u{1F7E2} UP';
+        hermesCard.className = 'hermes-status up';
+        hermesIcon.textContent = '\u{1F7E2}';
+        hermesLabel.textContent = 'ONLINE';
+      } else if (data.hermes.launched) {
+        hermesText.textContent = '\u{1F7E1} LAUNCHED';
+        hermesCard.className = 'hermes-status launched';
+        hermesIcon.textContent = '\u{1F7E1}';
+        hermesLabel.textContent = 'LAUNCHING...';
+      } else {
+        hermesText.textContent = '\u{1F534} DOWN';
+        hermesCard.className = 'hermes-status down';
+        hermesIcon.textContent = '\u{1F534}';
+        hermesLabel.textContent = 'OFFLINE';
+      }
+
+      // Net
+      document.getElementById('netText').textContent = data.health.online ? '\u{1F7E2} OK' : '\u{1F534} OFFLINE';
+
+      // Cycle
+      document.getElementById('cycleCount').textContent = data.cycle;
+
+      // Goal
+      document.getElementById('goalText').textContent = data.goal || '(no goal set)';
+
+      // Health
+      var cpu = data.health.cpu_percent;
+      document.getElementById('cpuValue').textContent = cpu + '%';
+      var cpuBar = document.getElementById('cpuBar');
+      cpuBar.style.width = Math.min(cpu, 100) + '%';
+      cpuBar.className = 'health-bar-fill ' + getBarColor(cpu, true);
+
+      var ram = data.health.free_ram_mb;
+      document.getElementById('ramValue').textContent = formatBytes(ram);
+      var ramPercent = Math.min((1 - ram / 16384) * 100, 100);
+      var ramBar = document.getElementById('ramBar');
+      ramBar.style.width = Math.max(0, 100 - ramPercent) + '%';
+      ramBar.className = 'health-bar-fill ' + getBarColor(ramPercent, true);
+
+      var disk = data.health.disk_free_mb;
+      document.getElementById('diskValue').textContent = formatBytes(disk);
+
+      document.getElementById('spawnValue').textContent = data.health.can_spawn ? 'YES' : 'NO';
+      document.getElementById('spawnValue').style.color = data.health.can_spawn ? 'var(--green)' : 'var(--red)';
+
+      // Last update
+      document.getElementById('lastUpdate').textContent = 'Updated: ' + new Date().toLocaleTimeString();
+    }
+
+    function updateTasks(tasks) {
+      var list = document.getElementById('taskList');
+      if (!tasks || tasks.length === 0) {
+        list.innerHTML = '<li class="empty-state">No tasks</li>';
+        return;
+      }
+      var html = '';
+      tasks.forEach(function(t) {
+        html += '<li class="task-item">';
+        html += '<span class="task-badge ' + t.status + '">' + t.status + '</span>';
+        html += '<div>';
+        html += '<div class="task-goal">' + escapeHtml(t.sub_goal) + '</div>';
+        html += '<div class="task-meta">p' + t.priority + ' | attempts: ' + t.attempts + '/' + t.max_attempts;
+        if (t.verification) html += ' | verify: ' + escapeHtml(t.verification.substring(0, 50));
+        html += '</div>';
+        html += '</div>';
+        html += '</li>';
+      });
+      list.innerHTML = html;
+    }
+
+    function updateEvents(events) {
+      var list = document.getElementById('eventList');
+      if (!events || events.length === 0) {
+        list.innerHTML = '<li class="empty-state">No events logged</li>';
+        return;
+      }
+      var html = '';
+      events.reverse().forEach(function(e) {
+        var eventType = e.event || 'unknown';
+        html += '<li class="event-item">';
+        html += '<span class="event-time">' + formatTime(e.ts) + '</span>';
+        html += '<span class="event-type ' + eventType + '">' + eventType + '</span>';
+        html += '<span class="event-detail">' + escapeHtml(e.detail || e.status || '') + '</span>';
+        html += '</li>';
+      });
+      list.innerHTML = html;
+    }
+
+    function escapeHtml(text) {
+      var div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    async function fetchAll() {
+      try {
+        var res = await fetch('/api/status');
+        var data = await res.json();
+        updateDashboard(data);
+
+        var res2 = await fetch('/api/tasks');
+        var tasks = await res2.json();
+        updateTasks(tasks);
+
+        var res3 = await fetch('/api/log');
+        var events = await res3.json();
+        updateEvents(events);
+      } catch (err) {
+        console.error('Fetch error:', err);
+      }
+    }
+
+    fetchAll();
+    setInterval(fetchAll, 5000);
+  </script>
+</body>
+</html>

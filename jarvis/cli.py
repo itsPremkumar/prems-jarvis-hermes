@@ -249,6 +249,12 @@ def cmd_uninstall(args):
     return 0
 
 
+def cmd_serve(args):
+    from .serve import serve
+    serve(args.db, args.port)
+    return 0
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(prog="jarvis", description="Prems-Jarvis-Hermes orchestrator")
     p.add_argument("--db", default="jarvis_state.db", help="path to state DB")
@@ -276,6 +282,10 @@ def main(argv=None):
     sub.add_parser("install", help="register Windows Task Scheduler tasks (reboot survival)").set_defaults(func=cmd_install)
     p_uninstall = sub.add_parser("uninstall", help="remove the scheduled tasks")
     p_uninstall.set_defaults(func=cmd_uninstall)
+
+    p_serve = sub.add_parser("serve", help="start the web dashboard server")
+    p_serve.add_argument("--port", type=int, default=8080, help="port to listen on (default: 8080)")
+    p_serve.set_defaults(func=cmd_serve)
 
     args = p.parse_args(argv)
     _install_crash_guard(args.db)
